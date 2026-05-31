@@ -1,0 +1,325 @@
+//@version=6
+indicator('PP ST Filtered Signals', overlay=true, shorttitle='PP-Filter')
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES - SUPERTREND RAPIDE (Petit)
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_fast = "══════ ST RAPIDE (Petit) ══════"
+fast_prd = input.int(defval=2, title='Pivot Point Period', minval=1, maxval=50, group=grp_fast)
+fast_Factor = input.float(defval=6, title='ATR Factor', minval=1, step=0.1, group=grp_fast)
+fast_Pd = input.int(defval=1, title='ATR Period', minval=1, group=grp_fast)
+fast_col_bull = input.color(color.lime, "Couleur Bull", group=grp_fast)
+fast_col_bear = input.color(color.red, "Couleur Bear", group=grp_fast)
+fast_width = input.int(1, "Épaisseur", minval=1, maxval=5, group=grp_fast)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES - SUPERTREND LENT (Grand)
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_slow = "══════ ST LENT (Grand) ══════"
+slow_prd = input.int(defval=4, title='Pivot Point Period', minval=1, maxval=50, group=grp_slow)
+slow_Factor = input.float(defval=11, title='ATR Factor', minval=1, step=0.1, group=grp_slow)
+slow_Pd = input.int(defval=2, title='ATR Period', minval=1, group=grp_slow)
+slow_col_bull = input.color(color.green, "Couleur Bull", group=grp_slow)
+slow_col_bear = input.color(color.maroon, "Couleur Bear", group=grp_slow)
+slow_width = input.int(2, "Épaisseur", minval=1, maxval=5, group=grp_slow)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES - MULTI-TIMEFRAME
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_mtf = "══════ MULTI-TIMEFRAME ══════"
+use_mtf = input.bool(true, "Activer confluence MTF", group=grp_mtf)
+tf_htf = input.timeframe("4D", "Timeframe supérieur", group=grp_mtf)
+mtf_prd = input.int(defval=4, title='MTF Pivot Period', minval=1, maxval=50, group=grp_mtf)
+mtf_Factor = input.float(defval=11, title='MTF ATR Factor', minval=1, step=0.1, group=grp_mtf)
+mtf_Pd = input.int(defval=2, title='MTF ATR Period', minval=1, group=grp_mtf)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES - FILTRES (IMPORTANT!)
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_filter = "══════ FILTRES SIGNAUX ══════"
+filter_position = input.bool(true, "Filtrer par position du prix", group=grp_filter, tooltip="SELL seulement si prix SOUS les 2 ST\nBUY seulement si prix AU-DESSUS des 2 ST")
+filter_squeeze = input.bool(true, "Bloquer signaux en zone Squeeze", group=grp_filter, tooltip="Pas de signal classique quand prix entre les 2 ST")
+show_trap = input.bool(true, "Marquer les pièges (⚠)", group=grp_filter, tooltip="Affiche un warning quand signal classique en zone squeeze")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES - SPIKE/SQUEEZE
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_pattern = "══════ PATTERNS ══════"
+use_spike = input.bool(true, "Détecter SPIKE", group=grp_pattern)
+use_squeeze = input.bool(true, "Détecter SQUEEZE breakout", group=grp_pattern)
+spike_bars = input.int(3, "Barres max pour Spring", minval=1, maxval=10, group=grp_pattern)
+squeeze_bars = input.int(5, "Barres min en Squeeze", minval=2, maxval=20, group=grp_pattern)
+spike_col = input.color(color.yellow, "Couleur Spike", group=grp_pattern)
+squeeze_col = input.color(color.aqua, "Couleur Squeeze", group=grp_pattern)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES - AFFICHAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_disp = "══════ AFFICHAGE ══════"
+showlabel = input.bool(true, title='Afficher signaux', group=grp_disp)
+show_zone = input.bool(true, "Colorer zone Squeeze", group=grp_disp)
+show_fill = input.bool(true, "Remplissage entre ST", group=grp_disp)
+fill_transp = input.int(85, "Transparence", minval=0, maxval=100, group=grp_disp)
+show_table = input.bool(true, "Tableau d'état", group=grp_disp)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALCUL SUPERTREND RAPIDE (Petit)
+// ═══════════════════════════════════════════════════════════════════════════════
+float fast_ph = ta.pivothigh(fast_prd, fast_prd)
+float fast_pl = ta.pivotlow(fast_prd, fast_prd)
+
+var float fast_center = na
+float fast_lastpp = bool(fast_ph) ? fast_ph : bool(fast_pl) ? fast_pl : na
+if bool(fast_lastpp)
+    if na(fast_center)
+        fast_center := fast_lastpp
+    else
+        fast_center := (fast_center * 2 + fast_lastpp) / 3
+
+float fast_Up = fast_center - fast_Factor * ta.atr(fast_Pd)
+float fast_Dn = fast_center + fast_Factor * ta.atr(fast_Pd)
+
+var float fast_TUp = na
+var float fast_TDown = na
+var int fast_Trend = 0
+fast_TUp := close[1] > fast_TUp[1] ? math.max(fast_Up, fast_TUp[1]) : fast_Up
+fast_TDown := close[1] < fast_TDown[1] ? math.min(fast_Dn, fast_TDown[1]) : fast_Dn
+fast_Trend := close > fast_TDown[1] ? 1 : close < fast_TUp[1] ? -1 : nz(fast_Trend[1], 1)
+float fast_ST = fast_Trend == 1 ? fast_TUp : fast_TDown
+
+fast_bull = fast_Trend == 1
+fast_bear = fast_Trend == -1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALCUL SUPERTREND LENT (Grand)
+// ═══════════════════════════════════════════════════════════════════════════════
+float slow_ph = ta.pivothigh(slow_prd, slow_prd)
+float slow_pl = ta.pivotlow(slow_prd, slow_prd)
+
+var float slow_center = na
+float slow_lastpp = bool(slow_ph) ? slow_ph : bool(slow_pl) ? slow_pl : na
+if bool(slow_lastpp)
+    if na(slow_center)
+        slow_center := slow_lastpp
+    else
+        slow_center := (slow_center * 2 + slow_lastpp) / 3
+
+float slow_Up = slow_center - slow_Factor * ta.atr(slow_Pd)
+float slow_Dn = slow_center + slow_Factor * ta.atr(slow_Pd)
+
+var float slow_TUp = na
+var float slow_TDown = na
+var int slow_Trend = 0
+slow_TUp := close[1] > slow_TUp[1] ? math.max(slow_Up, slow_TUp[1]) : slow_Up
+slow_TDown := close[1] < slow_TDown[1] ? math.min(slow_Dn, slow_TDown[1]) : slow_Dn
+slow_Trend := close > slow_TDown[1] ? 1 : close < slow_TUp[1] ? -1 : nz(slow_Trend[1], 1)
+float slow_ST = slow_Trend == 1 ? slow_TUp : slow_TDown
+
+slow_bull = slow_Trend == 1
+slow_bear = slow_Trend == -1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALCUL MTF SUPERTREND
+// ═══════════════════════════════════════════════════════════════════════════════
+f_mtf_supertrend() =>
+    float m_ph = ta.pivothigh(mtf_prd, mtf_prd)
+    float m_pl = ta.pivotlow(mtf_prd, mtf_prd)
+    var float m_center = na
+    float m_lastpp = bool(m_ph) ? m_ph : bool(m_pl) ? m_pl : na
+    if bool(m_lastpp)
+        if na(m_center)
+            m_center := m_lastpp
+        else
+            m_center := (m_center * 2 + m_lastpp) / 3
+    float m_Up = m_center - mtf_Factor * ta.atr(mtf_Pd)
+    float m_Dn = m_center + mtf_Factor * ta.atr(mtf_Pd)
+    var float m_TUp = na
+    var float m_TDown = na
+    var int m_Trend = 0
+    m_TUp := close[1] > m_TUp[1] ? math.max(m_Up, m_TUp[1]) : m_Up
+    m_TDown := close[1] < m_TDown[1] ? math.min(m_Dn, m_TDown[1]) : m_Dn
+    m_Trend := close > m_TDown[1] ? 1 : close < m_TUp[1] ? -1 : nz(m_Trend[1], 1)
+    m_Trend
+
+mtf_Trend = request.security(syminfo.tickerid, tf_htf, f_mtf_supertrend())
+mtf_bull = mtf_Trend == 1
+mtf_bear = mtf_Trend == -1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// POSITION DU PRIX
+// ═══════════════════════════════════════════════════════════════════════════════
+st_high = math.max(fast_ST, slow_ST)
+st_low = math.min(fast_ST, slow_ST)
+
+price_above_both = close > st_high  // Prix AU-DESSUS des 2 ST
+price_below_both = close < st_low   // Prix EN-DESSOUS des 2 ST
+price_between = close >= st_low and close <= st_high  // Prix ENTRE les 2 ST (ZONE PIÈGE!)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SQUEEZE DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+var int bars_in_squeeze = 0
+if price_between
+    bars_in_squeeze := bars_in_squeeze + 1
+else
+    bars_in_squeeze := 0
+
+squeeze_active = price_between and bars_in_squeeze >= 2
+was_in_squeeze = bars_in_squeeze[1] >= squeeze_bars
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPIKE DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+spike_cross_up = ta.crossover(high, fast_ST) and slow_bear
+spike_cross_down = ta.crossunder(low, fast_ST) and slow_bull
+
+var int bars_since_spike_up = 999
+var int bars_since_spike_down = 999
+
+if spike_cross_up
+    bars_since_spike_up := 0
+else
+    bars_since_spike_up := bars_since_spike_up + 1
+
+if spike_cross_down
+    bars_since_spike_down := 0
+else
+    bars_since_spike_down := bars_since_spike_down + 1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIGNAUX CLASSIQUES (AVEC FILTRES!)
+// ═══════════════════════════════════════════════════════════════════════════════
+both_bull = fast_bull and slow_bull
+both_bear = fast_bear and slow_bear
+mtf_ok_bull = not use_mtf or mtf_bull
+mtf_ok_bear = not use_mtf or mtf_bear
+
+// Conditions de base
+base_long = both_bull and mtf_ok_bull
+base_short = both_bear and mtf_ok_bear
+
+// FILTRE POSITION: SELL seulement si prix SOUS les 2 ST, BUY seulement si prix AU-DESSUS
+position_ok_long = not filter_position or price_above_both
+position_ok_short = not filter_position or price_below_both
+
+// FILTRE SQUEEZE: Pas de signal si prix entre les 2 ST
+squeeze_ok = not filter_squeeze or not price_between
+
+// SIGNAUX FILTRÉS (les vrais bons signaux)
+signal_long = base_long and position_ok_long and squeeze_ok
+signal_short = base_short and position_ok_short and squeeze_ok
+
+buy_filtered = signal_long and not signal_long[1]
+sell_filtered = signal_short and not signal_short[1]
+
+// SIGNAUX PIÈGE (ceux qu'on veut éviter - pour afficher warning)
+trap_long = base_long and not base_long[1] and (price_between or (filter_position and not price_above_both))
+trap_short = base_short and not base_short[1] and (price_between or (filter_position and not price_below_both))
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIGNAUX SPIKE (rejet du petit ST)
+// ═══════════════════════════════════════════════════════════════════════════════
+spike_sell = use_spike and slow_bear and bars_since_spike_up <= spike_bars and bars_since_spike_up > 0 and close < fast_ST and close[1] >= fast_ST
+spike_buy = use_spike and slow_bull and bars_since_spike_down <= spike_bars and bars_since_spike_down > 0 and close > fast_ST and close[1] <= fast_ST
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIGNAUX SQUEEZE BREAKOUT
+// ═══════════════════════════════════════════════════════════════════════════════
+squeeze_sell = use_squeeze and was_in_squeeze and slow_bear and mtf_ok_bear and close < st_low and close[1] >= st_low
+squeeze_buy = use_squeeze and was_in_squeeze and slow_bull and mtf_ok_bull and close > st_high and close[1] <= st_high
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE - SUPERTRENDS
+// ═══════════════════════════════════════════════════════════════════════════════
+fast_linecolor = fast_bull ? fast_col_bull : fast_col_bear
+slow_linecolor = slow_bull ? slow_col_bull : slow_col_bear
+
+p1 = plot(fast_ST, color=fast_linecolor, linewidth=fast_width, title='ST Rapide')
+p2 = plot(slow_ST, color=slow_linecolor, linewidth=slow_width, title='ST Lent')
+
+// Remplissage - ROUGE si prix entre les 2 ST (zone piège)
+fill_col = price_between ? color.new(color.orange, 70) : both_bull ? color.new(fast_col_bull, fill_transp) : both_bear ? color.new(fast_col_bear, fill_transp) : color.new(color.gray, 85)
+fill(p1, p2, color=show_fill ? fill_col : na, title="Zone ST")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE - ZONE SQUEEZE (WARNING)
+// ═══════════════════════════════════════════════════════════════════════════════
+bgcolor(show_zone and squeeze_active ? color.new(color.orange, 85) : na, title="Zone Piège")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE - SIGNAUX FILTRÉS (LES BONS!)
+// ═══════════════════════════════════════════════════════════════════════════════
+plotshape(buy_filtered and showlabel, title='Buy Filtered', text='✓ BUY', location=location.belowbar, style=shape.labelup, size=size.normal, color=color.lime, textcolor=color.black)
+plotshape(sell_filtered and showlabel, title='Sell Filtered', text='✓ SELL', location=location.abovebar, style=shape.labeldown, size=size.normal, color=color.red, textcolor=color.white)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE - SIGNAUX PIÈGE (À ÉVITER!)
+// ═══════════════════════════════════════════════════════════════════════════════
+plotshape(trap_long and show_trap and showlabel, title='Trap Long', text='⚠', location=location.belowbar, style=shape.xcross, size=size.small, color=color.new(color.orange, 0))
+plotshape(trap_short and show_trap and showlabel, title='Trap Short', text='⚠', location=location.abovebar, style=shape.xcross, size=size.small, color=color.new(color.orange, 0))
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE - SIGNAUX SPIKE
+// ═══════════════════════════════════════════════════════════════════════════════
+plotshape(spike_buy and showlabel, title='Spike Buy', text='⚡BUY', location=location.belowbar, style=shape.labelup, size=size.small, color=spike_col, textcolor=color.black)
+plotshape(spike_sell and showlabel, title='Spike Sell', text='⚡SELL', location=location.abovebar, style=shape.labeldown, size=size.small, color=spike_col, textcolor=color.black)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE - SIGNAUX SQUEEZE BREAKOUT
+// ═══════════════════════════════════════════════════════════════════════════════
+plotshape(squeeze_buy and showlabel, title='Squeeze Buy', text='◆BUY', location=location.belowbar, style=shape.labelup, size=size.small, color=squeeze_col, textcolor=color.black)
+plotshape(squeeze_sell and showlabel, title='Squeeze Sell', text='◆SELL', location=location.abovebar, style=shape.labeldown, size=size.small, color=squeeze_col, textcolor=color.black)
+
+// Marquer les spikes
+plotshape(spike_cross_up and use_spike, title='Spike Up', style=shape.xcross, location=location.abovebar, color=color.new(color.yellow, 30), size=size.tiny)
+plotshape(spike_cross_down and use_spike, title='Spike Down', style=shape.xcross, location=location.belowbar, color=color.new(color.yellow, 30), size=size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TABLEAU D'ÉTAT
+// ═══════════════════════════════════════════════════════════════════════════════
+var table tbl = table.new(position.top_right, 2, 9, bgcolor=color.new(color.black, 80), border_width=1)
+
+if barstate.islast and show_table
+    table.cell(tbl, 0, 0, "ST Rapide", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 0, fast_bull ? "▲ BULL" : "▼ BEAR", text_color=fast_bull ? fast_col_bull : fast_col_bear, text_size=size.small)
+
+    table.cell(tbl, 0, 1, "ST Lent", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 1, slow_bull ? "▲ BULL" : "▼ BEAR", text_color=slow_bull ? slow_col_bull : slow_col_bear, text_size=size.small)
+
+    table.cell(tbl, 0, 2, "MTF " + tf_htf, text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 2, use_mtf ? (mtf_bull ? "▲ BULL" : "▼ BEAR") : "OFF", text_color=use_mtf ? (mtf_bull ? color.lime : color.red) : color.gray, text_size=size.small)
+
+    table.cell(tbl, 0, 3, "Tendance", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 3, slow_bull ? "HAUSSIÈRE" : "BAISSIÈRE", text_color=slow_bull ? color.lime : color.red, text_size=size.small)
+
+    table.cell(tbl, 0, 4, "Position", text_color=color.white, text_size=size.small)
+    pos_txt = price_above_both ? "✓ Dessus" : price_below_both ? "✓ Dessous" : "⚠ ENTRE"
+    pos_col = price_between ? color.orange : color.lime
+    table.cell(tbl, 1, 4, pos_txt, text_color=pos_col, text_size=size.small)
+
+    table.cell(tbl, 0, 5, "Zone", text_color=color.white, text_size=size.small)
+    zone_txt = price_between ? "PIÈGE!" : "OK"
+    table.cell(tbl, 1, 5, zone_txt, text_color=price_between ? color.orange : color.lime, text_size=size.small)
+
+    table.cell(tbl, 0, 6, "Squeeze", text_color=color.white, text_size=size.small)
+    table.cell(tbl, 1, 6, squeeze_active ? str.tostring(bars_in_squeeze) + " bars" : "—", text_color=squeeze_active ? color.orange : color.gray, text_size=size.small)
+
+    table.cell(tbl, 0, 7, "Filtre", text_color=color.white, text_size=size.small)
+    filter_ok = (base_long and position_ok_long and squeeze_ok) or (base_short and position_ok_short and squeeze_ok)
+    table.cell(tbl, 1, 7, filter_ok ? "✓ PASS" : "✗ BLOQUÉ", text_color=filter_ok ? color.lime : color.orange, text_size=size.small)
+
+    table.cell(tbl, 0, 8, "SIGNAL", text_color=color.white, text_size=size.normal)
+    sig_txt = signal_long ? "✓ LONG" : signal_short ? "✓ SHORT" : price_between ? "⚠ WAIT" : "NEUTRE"
+    sig_col = signal_long ? color.lime : signal_short ? color.red : price_between ? color.orange : color.gray
+    table.cell(tbl, 1, 8, sig_txt, text_color=sig_col, text_size=size.normal)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTES
+// ═══════════════════════════════════════════════════════════════════════════════
+alertcondition(buy_filtered, title='Buy Filtered', message='✓ BUY CONFIRMÉ: Prix au-dessus des 2 ST + Confluence')
+alertcondition(sell_filtered, title='Sell Filtered', message='✓ SELL CONFIRMÉ: Prix en-dessous des 2 ST + Confluence')
+alertcondition(trap_long or trap_short, title='Trap Warning', message='⚠ PIÈGE: Signal en zone squeeze - NE PAS TRADER')
+alertcondition(spike_buy, title='Spike Buy', message='⚡ SPIKE BUY: Rejet petit ST')
+alertcondition(spike_sell, title='Spike Sell', message='⚡ SPIKE SELL: Rejet petit ST')
+alertcondition(squeeze_buy, title='Squeeze Buy', message='◆ SQUEEZE BUY: Breakout vers le haut')
+alertcondition(squeeze_sell, title='Squeeze Sell', message='◆ SQUEEZE SELL: Breakout vers le bas')

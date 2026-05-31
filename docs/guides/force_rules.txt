@@ -1,0 +1,11 @@
+RÈGLES PINESCRIPT v6 OBLIGATOIRES:
+
+0. HEADER: TOUJOURS commencer par: //@version=6
+1. Types stricts obligatoires: float maVar = 0.0 (PAS maVar = 0)
+2. Assignation avec = (JAMAIS ==)
+3. Variables globales persistantes: var float x = 0.0
+4. Inputs modernes: input.int(14, "Période", group="Paramètres")
+5. Couleurs: color.new(color.red, 50) (PAS transp= séparé)
+6. Vérification NA: not na(x) (PAS x != na)
+
+AVANT DE GÉNÉRER: Vérifier que //@version=6 est présent!

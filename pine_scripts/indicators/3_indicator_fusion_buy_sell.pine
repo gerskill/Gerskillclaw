@@ -1,0 +1,120 @@
+//@version=6
+indicator('3-Indicator Fusion Buy/Sell', overlay = true, max_boxes_count = 500)
+
+// ============================================================
+// INDICATEUR 1: SuperTrend Default (4, 11, 2)
+// ============================================================
+prd1 = input.int(defval = 4, title = 'SuperTrend #1 - Pivot Period', minval = 1, maxval = 50)
+Factor1 = input.float(defval = 11, title = 'SuperTrend #1 - ATR Factor', minval = 1, step = 0.1)
+Pd1 = input.int(defval = 2, title = 'SuperTrend #1 - ATR Period', minval = 1)
+
+// Calculate SuperTrend #1
+float ph1 = ta.pivothigh(prd1, prd1)
+float pl1 = ta.pivotlow(prd1, prd1)
+
+var float center1 = na
+var float lastpp1 = bool(ph1) ? ph1 : bool(pl1) ? pl1 : na
+
+if bool(lastpp1)
+    if na(center1)
+        center1 := lastpp1
+    else
+        center1 := (center1 * 2 + lastpp1) / 3
+
+Up1 = center1 - Factor1 * ta.atr(Pd1)
+Dn1 = center1 + Factor1 * ta.atr(Pd1)
+
+TUp1 = na
+TDown1 = na
+Trend1 = 0
+
+TUp1 := close[1] > TUp1[1] ? math.max(Up1, TUp1[1]) : Up1
+TDown1 := close[1] < TDown1[1] ? math.min(Dn1, TDown1[1]) : Dn1
+Trend1 := close > TDown1[1] ? 1 : close < TUp1[1] ? -1 : nz(Trend1[1], 1)
+
+Trailingsl1 = Trend1 == 1 ? TUp1 : TDown1
+
+// Buy/Sell Signal #1
+bool buySignal1 = Trend1 == 1 and Trend1[1] == -1
+bool sellSignal1 = Trend1 == -1 and Trend1[1] == 1
+
+// ============================================================
+// INDICATEUR 2: SuperTrend Aggressive (6, 6, 1)
+// ============================================================
+prd2 = input.int(defval = 6, title = 'SuperTrend #2 - Pivot Period', minval = 1, maxval = 50)
+Factor2 = input.float(defval = 6, title = 'SuperTrend #2 - ATR Factor', minval = 1, step = 0.1)
+Pd2 = input.int(defval = 1, title = 'SuperTrend #2 - ATR Period', minval = 1)
+
+// Calculate SuperTrend #2
+float ph2 = ta.pivothigh(prd2, prd2)
+float pl2 = ta.pivotlow(prd2, prd2)
+
+var float center2 = na
+var float lastpp2 = bool(ph2) ? ph2 : bool(pl2) ? pl2 : na
+
+if bool(lastpp2)
+    if na(center2)
+        center2 := lastpp2
+    else
+        center2 := (center2 * 2 + lastpp2) / 3
+
+Up2 = center2 - Factor2 * ta.atr(Pd2)
+Dn2 = center2 + Factor2 * ta.atr(Pd2)
+
+TUp2 = na
+TDown2 = na
+Trend2 = 0
+
+TUp2 := close[1] > TUp2[1] ? math.max(Up2, TUp2[1]) : Up2
+TDown2 := close[1] < TDown2[1] ? math.min(Dn2, TDown2[1]) : Dn2
+Trend2 := close > TDown2[1] ? 1 : close < TUp2[1] ? -1 : nz(Trend2[1], 1)
+
+Trailingsl2 = Trend2 == 1 ? TUp2 : TDown2
+
+// Buy/Sell Signal #2
+bool buySignal2 = Trend2 == 1 and Trend2[1] == -1
+bool sellSignal2 = Trend2 == -1 and Trend2[1] == 1
+
+// ============================================================
+// INDICATEUR FUSION: Combiner les signaux
+// ============================================================
+
+// CRITERE 1: Buy Signal (2 indicateurs doivent être BUY)
+bool fusionBuy = buySignal1 and buySignal2
+
+// CRITERE 2: Sell Signal (2 indicateurs doivent être SELL)
+bool fusionSell = sellSignal1 and sellSignal2
+
+// NIVEAU D'ENTRÉE POUR BUY (très proche du prix actuel)
+// Utilise le prix actuel + 0.1% pour éviter l'immédiat
+float entryPrice = close * 1.001
+
+// NIVEAU DE SORTIE POUR SELL (très proche du prix actuel)
+float exitPrice = close * 0.999
+
+// ============================================================
+// AFFICHAGE VISUEL
+// ============================================================
+
+// Couleurs
+color buyColor = color.new(color.lime, 70)
+color sellColor = color.new(color.red, 70)
+color labelBuy = color.new(color.lime, 0)
+color labelSell = color.new(color.red, 0)
+
+// Afficher le niveau d'entrée BUY
+box buyBox = fusionBuy ? box.new(left = bar_index - 5, top = entryPrice, right = bar_index + 5, bottom = close, bgcolor = buyColor, border_color = labelBuy) : na
+
+// Afficher le niveau de sortie SELL
+box sellBox = fusionSell ? box.new(left = bar_index - 5, top = close, right = bar_index + 5, bottom = exitPrice, bgcolor = sellColor, border_color = labelSell) : na
+
+// Labels BUY/SELL
+label.new(bar_index, close, fusionBuy ? "BUY 🔥" : na, style = label.style_label_up, color = labelBuy, textcolor = color.black, size = size.small)
+label.new(bar_index, close, fusionSell ? "SELL ❌" : na, style = label.style_label_down, color = labelSell, textcolor = color.white, size = small)
+
+// ============================================================
+// ALERTES
+// ============================================================
+
+alertcondition(fusionBuy, title = 'Fusion Buy Signal', message = 'BUY SIGNAL - Entrée potentielle à {{close}}')
+alertcondition(fusionSell, title = 'Fusion Sell Signal', message = 'SELL SIGNAL - Sortie potentielle à {{close}}')

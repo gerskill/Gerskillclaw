@@ -1,0 +1,168 @@
+{
+  "_info": {
+    "source": "TradingView MCP natif — exchange BINANCE pour crypto, NASDAQ/NYSE pour stocks",
+    "analysis_tool": "coin_analysis / multi_timeframe_analysis",
+    "timeframes_supported": ["5m", "15m", "1h", "4h", "1D", "1W"],
+    "note_forex": "AUCUNE paire Forex/Or supportée nativement (OANDA, FX_IDC, COMEX non supportés)"
+  },
+
+  "🐋 BALEINES": {
+    "desc": "Majors crypto — liquidité max, moves institutionnels",
+    "exchange": "BINANCE",
+    "pairs": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "BNBUSDT",
+      "SOLUSDT",
+      "XRPUSDT"
+    ]
+  },
+
+  "🏗️ L1 CHALLENGERS": {
+    "desc": "Layer 1 alternatifs — compétiteurs ETH/SOL",
+    "exchange": "BINANCE",
+    "pairs": [
+      "ADAUSDT",
+      "AVAXUSDT",
+      "DOTUSDT",
+      "NEARUSDT",
+      "ATOMUSDT",
+      "APTUSDT",
+      "SUIUSDT",
+      "TIAUSDT",
+      "ALGOUSDT",
+      "ICPUSDT"
+    ]
+  },
+
+  "⚙️ L2 SCALING": {
+    "desc": "Layer 2 Ethereum — scalabilité et gas fees",
+    "exchange": "BINANCE",
+    "pairs": [
+      "MATICUSDT",
+      "ARBUSDT",
+      "OPUSDT",
+      "STRKUSDT",
+      "ZKUSDT",
+      "MANTAUSDT"
+    ]
+  },
+
+  "🔗 DEFI BLUE CHIP": {
+    "desc": "Protocoles DeFi établis — DEX, lending, yield",
+    "exchange": "BINANCE",
+    "pairs": [
+      "LINKUSDT",
+      "UNIUSDT",
+      "AAVEUSDT",
+      "MKRUSDT",
+      "CRVUSDT",
+      "COMPUSDT",
+      "SNXUSDT",
+      "LDOUSDT",
+      "RUNEUSDT",
+      "1INCHUSDT"
+    ]
+  },
+
+  "🤖 IA & INFRA WEB3": {
+    "desc": "AI, computing décentralisé, oracle, infra",
+    "exchange": "BINANCE",
+    "pairs": [
+      "FETUSDT",
+      "RENDERUSDT",
+      "WLDUSDT",
+      "AGIXUSDT",
+      "OCEANUSDT",
+      "ARKMUSDT",
+      "INJUSDT",
+      "GRTUSDT",
+      "APIUSDT",
+      "TAOUSDT"
+    ]
+  },
+
+  "🎮 GAMING & METAVERSE": {
+    "desc": "GameFi, NFT infra, metaverse tokens",
+    "exchange": "BINANCE",
+    "pairs": [
+      "AXSUSDT",
+      "SANDUSDT",
+      "MANAUSDT",
+      "GALAUSDT",
+      "IMXUSDT",
+      "APEUSDT",
+      "RNDRUSDT"
+    ]
+  },
+
+  "🐸 MEME CASINO": {
+    "desc": "Memecoins — haute volatilité, momentum pur",
+    "exchange": "BINANCE",
+    "pairs": [
+      "DOGEUSDT",
+      "SHIBUSDT",
+      "PEPEUSDT",
+      "FLOKIUSDT",
+      "BONKUSDT",
+      "WIFUSDT",
+      "NEIROUSDT",
+      "MOGUSDT"
+    ]
+  },
+
+  "💰 STABLECOINS & YIELD": {
+    "desc": "Ecosystème stable — DeFi yield, liquid staking",
+    "exchange": "BINANCE",
+    "pairs": [
+      "STETHUSDT",
+      "CBETHUSDT",
+      "ANKRUSDT",
+      "SSVUSDT"
+    ]
+  },
+
+  "📊 STOCKS US TECH": {
+    "desc": "Tech NASDAQ — analyse heure de marché seulement",
+    "exchange": "NASDAQ",
+    "pairs": [
+      "AAPL",
+      "MSFT",
+      "NVDA",
+      "TSLA",
+      "META",
+      "GOOGL",
+      "AMZN",
+      "AMD",
+      "NFLX",
+      "INTC"
+    ]
+  },
+
+  "📈 ETF & INDICES": {
+    "desc": "ETFs majeurs — SPY, QQQ, sectoriels",
+    "exchange": "AMEX",
+    "pairs": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "DIA",
+      "XLE",
+      "XLF",
+      "XLK",
+      "XLV",
+      "GLD",
+      "SLV"
+    ]
+  },
+
+  "_forex_note": {
+    "desc": "❌ NON SUPPORTÉ par tradingview-mcp — garder dans scanner Python Yahoo Finance",
+    "pairs": [
+      "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
+      "AUDUSD", "NZDUSD", "USDCAD",
+      "EURJPY", "GBPJPY", "EURGBP",
+      "XAUUSD", "XAGUSD"
+    ]
+  }
+}

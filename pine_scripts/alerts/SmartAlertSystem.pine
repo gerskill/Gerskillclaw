@@ -1,0 +1,406 @@
+//@version=6
+indicator("Smart Alert System — Tier 3", overlay=true, shorttitle="SAS",
+     max_lines_count=20, max_labels_count=100)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPE 0 — FILTRE TENDANCE (EMA)
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOUVEAU : chaque signal n'est validé que si l'EMA de tendance confirme la direction.
+// → Signal HAUSSIER  : prix > EMA  (tendance montante)
+// → Signal BAISSIER  : prix < EMA  (tendance descendante)
+// Désactiver le filtre = tous les signaux passent dans les deux sens.
+grp_ema = "══ FILTRE TENDANCE EMA ══"
+use_ema_filter = input.bool(true,  "Filtre EMA actif",           group=grp_ema,
+     tooltip="Si activé, les signaux haussiers passent seulement au-dessus de l'EMA, les baissiers en-dessous")
+ema_len        = input.int(200,    "Période EMA (ex: 200)",      group=grp_ema, minval=10, maxval=500)
+ema_color_bull = input.color(color.new(color.orange, 0), "Couleur EMA (haussier)", group=grp_ema)
+ema_color_bear = input.color(color.new(color.red,    0), "Couleur EMA (baissier)", group=grp_ema)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPE 1 — NIVEAUX CLÉS (jusqu'à 5 niveaux manuels)
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_lvl = "══ NIVEAUX CLÉS ══"
+use_alerts_levels = input.bool(true,  "Alertes niveaux actives",   group=grp_lvl)
+lvl1_on  = input.bool(true,   "Niveau 1 actif",   group=grp_lvl)
+lvl1_val = input.float(0.0,   "Niveau 1 (prix)",  group=grp_lvl, step=0.01)
+lvl1_lbl = input.string("PDH","Label N1",          group=grp_lvl)
+lvl2_on  = input.bool(false,  "Niveau 2 actif",   group=grp_lvl)
+lvl2_val = input.float(0.0,   "Niveau 2 (prix)",  group=grp_lvl, step=0.01)
+lvl2_lbl = input.string("PDL","Label N2",          group=grp_lvl)
+lvl3_on  = input.bool(false,  "Niveau 3 actif",   group=grp_lvl)
+lvl3_val = input.float(0.0,   "Niveau 3 (prix)",  group=grp_lvl, step=0.01)
+lvl3_lbl = input.string("R1", "Label N3",          group=grp_lvl)
+lvl4_on  = input.bool(false,  "Niveau 4 actif",   group=grp_lvl)
+lvl4_val = input.float(0.0,   "Niveau 4 (prix)",  group=grp_lvl, step=0.01)
+lvl4_lbl = input.string("S1", "Label N4",          group=grp_lvl)
+lvl5_on  = input.bool(false,  "Niveau 5 actif",   group=grp_lvl)
+lvl5_val = input.float(0.0,   "Niveau 5 (prix)",  group=grp_lvl, step=0.01)
+lvl5_lbl = input.string("PMH","Label N5",          group=grp_lvl)
+atr_tol  = input.float(0.15,  "Tolérance ATR %",  group=grp_lvl, minval=0.05, maxval=1.0, step=0.05,
+     tooltip="% d'ATR pour éviter les faux breaks sur wicks. Ex: 0.15 = 0.15% du prix")
+vol_mult_lvl = input.float(1.5, "Volume min (x avg)", group=grp_lvl, minval=1.0, maxval=5.0, step=0.1)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPE 2 — VWAP RECLAIM / REJECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_vwap = "══ VWAP ══"
+use_alerts_vwap  = input.bool(true,  "Alertes VWAP actives",     group=grp_vwap)
+vwap_consec      = input.int(2,      "Clôtures consécutives",    group=grp_vwap, minval=1, maxval=5,
+     tooltip="Nb de bougies qui doivent clôturer du même côté du VWAP pour valider")
+vol_mult_vwap    = input.float(1.3,  "Volume min (x avg)",       group=grp_vwap, minval=1.0, step=0.1)
+rsi_vwap_len     = input.int(14,     "RSI Length",               group=grp_vwap)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPE 3 — VOLUME SPIKE
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_vol = "══ VOLUME SPIKE ══"
+use_alerts_vol   = input.bool(true,  "Alertes Volume actives",   group=grp_vol)
+vol_spike_mult   = input.float(2.5,  "Volume spike (x avg)",     group=grp_vol, minval=1.5, step=0.1)
+vol_bar_size_pct = input.float(0.3,  "Taille min bougie %",      group=grp_vol, minval=0.1, step=0.05,
+     tooltip="La bougie doit faire au moins X% de range pour confirmer le spike")
+vol_avg_len      = input.int(20,     "Longueur moyenne volume",  group=grp_vol)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPE 4 — OPENING RANGE BREAKOUT (ORB)
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_orb = "══ ORB ══"
+use_alerts_orb   = input.bool(true,  "Alertes ORB actives",      group=grp_orb)
+orb_minutes      = input.int(15,     "Durée ORB (minutes)",      group=grp_orb,
+     options=[1,2,3,5,10,15,30,60],
+     tooltip="Durée de la plage d'ouverture. 5min ou 15min sont les plus populaires")
+vol_mult_orb     = input.float(1.3,  "Volume min (x avg)",       group=grp_orb, minval=1.0, step=0.1)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GROUPE 5 — SESSION
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_sess = "══ SESSION ══"
+sess_open_h  = input.int(9,  "Heure open (NY)",    group=grp_sess, minval=0, maxval=23)
+sess_open_m  = input.int(30, "Minute open (NY)",   group=grp_sess, minval=0, maxval=59)
+sess_close_h = input.int(16, "Heure close (NY)",   group=grp_sess, minval=0, maxval=23)
+sess_close_m = input.int(0,  "Minute close (NY)",  group=grp_sess, minval=0, maxval=59)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALCULS DE BASE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Volume moyen ──────────────────────────────────────────────────────────────
+vol_avg = ta.sma(volume, vol_avg_len)
+
+// ── RSI ───────────────────────────────────────────────────────────────────────
+rsi_val = ta.rsi(close, rsi_vwap_len)
+
+// ── ATR tolérance ─────────────────────────────────────────────────────────────
+atr_tol_val = close * atr_tol / 100
+
+// ── EMA de tendance ───────────────────────────────────────────────────────────
+// Calculée sur tout le graphique (pas seulement en session) pour que la courbe
+// soit continue et serve de référence visuelle de tendance long terme.
+ema_trend     = ta.ema(close, ema_len)
+above_ema     = close > ema_trend   // tendance haussière
+below_ema     = close < ema_trend   // tendance baissière
+
+// Filtre appliqué aux signaux : si use_ema_filter = false, filtre = toujours vrai
+trend_bull_ok = not use_ema_filter or above_ema
+trend_bear_ok = not use_ema_filter or below_ema
+
+// ── Session NY ────────────────────────────────────────────────────────────────
+ny_open_time   = timestamp("America/New_York", year, month, dayofmonth, sess_open_h,  sess_open_m,  0)
+ny_close_time  = timestamp("America/New_York", year, month, dayofmonth, sess_close_h, sess_close_m, 0)
+in_session     = time >= ny_open_time and time <= ny_close_time
+
+// ── VWAP ancré à l'ouverture NY ───────────────────────────────────────────────
+// CORRECTION : ta.vwap se réinitialise à minuit UTC sur les marchés crypto 24h/24
+// Solution : VWAP custom qui repart exactement à l'heure d'ouverture NY définie.
+var float _vwap_pv = 0.0
+var float _vwap_v  = 0.0
+
+bool _is_ny_open_bar = time >= ny_open_time and time[1] < ny_open_time
+
+if _is_ny_open_bar
+    _vwap_pv := hlc3 * volume
+    _vwap_v  := volume
+else if in_session
+    _vwap_pv += hlc3 * volume
+    _vwap_v  += volume
+
+float vwap_val = _vwap_v > 0 and in_session ? _vwap_pv / _vwap_v : na
+
+// ── Heure formatée ────────────────────────────────────────────────────────────
+int   _bar_h    = hour(time,   "America/New_York")
+int   _bar_m    = minute(time, "America/New_York")
+string _bar_m_s = _bar_m < 10 ? "0" + str.tostring(_bar_m) : str.tostring(_bar_m)
+bar_time_str    = str.tostring(_bar_h) + ":" + _bar_m_s
+
+// ── Position VWAP + EMA pour messages ─────────────────────────────────────────
+above_vwap_str = close > vwap_val ? "above VWAP" : "below VWAP"
+ema_trend_str  = above_ema ? "EMA↑" : "EMA↓"
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTE 1 — BREAK DE NIVEAU CLÉ  (filtré par EMA)
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOUVEAU : broke_up n'est valide que si prix > EMA (tendance haussière confirmée)
+//           broke_dn n'est valide que si prix < EMA (tendance baissière confirmée)
+f_level_break(float lvl_val, string lvl_name, bool lvl_active) =>
+    bool au = false
+    bool ad = false
+    if lvl_active and lvl_val > 0
+        bool vol_ok    = volume > vol_avg * vol_mult_lvl
+        bool broke_up  = close > lvl_val + atr_tol_val and close[1] <= lvl_val + atr_tol_val
+        bool broke_dn  = close < lvl_val - atr_tol_val and close[1] >= lvl_val - atr_tol_val
+        au := use_alerts_levels and broke_up and vol_ok and trend_bull_ok and barstate.isconfirmed
+        ad := use_alerts_levels and broke_dn and vol_ok and trend_bear_ok and barstate.isconfirmed
+    [au, ad]
+
+[l1u, l1d] = f_level_break(lvl1_val, lvl1_lbl, lvl1_on)
+[l2u, l2d] = f_level_break(lvl2_val, lvl2_lbl, lvl2_on)
+[l3u, l3d] = f_level_break(lvl3_val, lvl3_lbl, lvl3_on)
+[l4u, l4d] = f_level_break(lvl4_val, lvl4_lbl, lvl4_on)
+[l5u, l5d] = f_level_break(lvl5_val, lvl5_lbl, lvl5_on)
+
+any_lvl_break_up   = l1u or l2u or l3u or l4u or l5u
+any_lvl_break_down = l1d or l2d or l3d or l4d or l5d
+
+string _vol_str  = str.tostring(math.round(volume / vol_avg * 10) / 10, "#.#")
+string _px_str   = str.tostring(close, "#.##")
+string _ema_str  = str.tostring(ema_trend, "#.##")
+string _brk_name = l1u or l1d ? lvl1_lbl : l2u or l2d ? lvl2_lbl :
+                   l3u or l3d ? lvl3_lbl : l4u or l4d ? lvl4_lbl : lvl5_lbl
+
+if any_lvl_break_up
+    alert("🟢 " + syminfo.ticker + " BROKE UP "   + _brk_name +
+         " at " + _px_str + " | " + ema_trend_str + " EMA" + str.tostring(ema_len) + ": " + _ema_str +
+         " | Vol: " + _vol_str + "x" +
+         " | " + above_vwap_str + " | NY " + bar_time_str,
+         alert.freq_once_per_bar_close)
+
+if any_lvl_break_down
+    alert("🔴 " + syminfo.ticker + " BROKE DOWN " + _brk_name +
+         " at " + _px_str + " | " + ema_trend_str + " EMA" + str.tostring(ema_len) + ": " + _ema_str +
+         " | Vol: " + _vol_str + "x" +
+         " | " + above_vwap_str + " | NY " + bar_time_str,
+         alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTE 2 — VWAP RECLAIM / REJECTION  (filtré par EMA)
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOUVEAU : reclaim valide seulement si prix > EMA (on ne cherche pas un reclaim
+//           haussier quand la tendance long terme est baissière)
+above_vwap = close > vwap_val
+below_vwap = close < vwap_val
+
+var int consec_above = 0
+var int consec_below = 0
+consec_above := above_vwap ? consec_above[1] + 1 : 0
+consec_below := below_vwap ? consec_below[1] + 1 : 0
+
+vwap_reclaim   = use_alerts_vwap and consec_above == vwap_consec
+                 and volume > vol_avg * vol_mult_vwap
+                 and rsi_val > 50
+                 and trend_bull_ok          // ← NOUVEAU : EMA confirme tendance haussière
+                 and barstate.isconfirmed
+
+vwap_rejection = use_alerts_vwap and consec_below == vwap_consec
+                 and volume > vol_avg * vol_mult_vwap
+                 and rsi_val < 50
+                 and trend_bear_ok          // ← NOUVEAU : EMA confirme tendance baissière
+                 and barstate.isconfirmed
+
+if vwap_reclaim
+    alert("📊 " + syminfo.ticker + " VWAP RECLAIM" +
+         " | Price: " + str.tostring(close, "#.##") +
+         " | " + ema_trend_str + " EMA" + str.tostring(ema_len) + ": " + _ema_str +
+         " | RSI: " + str.tostring(math.round(rsi_val)) +
+         " | Vol: " + str.tostring(math.round(volume / vol_avg * 10) / 10) + "x" +
+         " | NY " + bar_time_str, alert.freq_once_per_bar_close)
+
+if vwap_rejection
+    alert("📊 " + syminfo.ticker + " VWAP REJECTION" +
+         " | Price: " + str.tostring(close, "#.##") +
+         " | " + ema_trend_str + " EMA" + str.tostring(ema_len) + ": " + _ema_str +
+         " | RSI: " + str.tostring(math.round(rsi_val)) +
+         " | Vol: " + str.tostring(math.round(volume / vol_avg * 10) / 10) + "x" +
+         " | NY " + bar_time_str, alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTE 3 — VOLUME SPIKE  (filtré par EMA)
+// ═══════════════════════════════════════════════════════════════════════════════
+bar_size_pct  = math.abs(close - open) / open * 100
+is_bull_bar   = close > open
+is_bear_bar   = close < open
+
+vol_spike_bull = use_alerts_vol
+                 and volume > vol_avg * vol_spike_mult
+                 and bar_size_pct >= vol_bar_size_pct
+                 and is_bull_bar
+                 and trend_bull_ok          // ← NOUVEAU
+                 and barstate.isconfirmed
+
+vol_spike_bear = use_alerts_vol
+                 and volume > vol_avg * vol_spike_mult
+                 and bar_size_pct >= vol_bar_size_pct
+                 and is_bear_bar
+                 and trend_bear_ok          // ← NOUVEAU
+                 and barstate.isconfirmed
+
+if vol_spike_bull
+    alert("⚡ " + syminfo.ticker + " VOL SPIKE BULLISH" +
+         " | " + str.tostring(math.round(volume / vol_avg * 10) / 10) + "x avg volume" +
+         " | Bar: +" + str.tostring(math.round(bar_size_pct * 100) / 100) + "%" +
+         " | " + ema_trend_str + " EMA" + str.tostring(ema_len) +
+         " | " + above_vwap_str +
+         " | NY " + bar_time_str, alert.freq_once_per_bar_close)
+
+if vol_spike_bear
+    alert("⚡ " + syminfo.ticker + " VOL SPIKE BEARISH" +
+         " | " + str.tostring(math.round(volume / vol_avg * 10) / 10) + "x avg volume" +
+         " | Bar: -" + str.tostring(math.round(bar_size_pct * 100) / 100) + "%" +
+         " | " + ema_trend_str + " EMA" + str.tostring(ema_len) +
+         " | " + above_vwap_str +
+         " | NY " + bar_time_str, alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTE 4 — OPENING RANGE BREAKOUT (ORB)  ← filtré par EMA
+// ═══════════════════════════════════════════════════════════════════════════════
+// NOUVEAU : ORB↑ seulement si prix > EMA (tendance haussière)
+//           ORB↓ seulement si prix < EMA (tendance baissière)
+// → Élimine les faux breakouts à contre-tendance
+orb_end_time = ny_open_time + orb_minutes * 60 * 1000
+
+var float orb_high     = na
+var float orb_low      = na
+var bool  orb_set      = false
+var bool  orb_broke_up   = false
+var bool  orb_broke_down = false
+
+is_new_day = dayofmonth != dayofmonth[1]
+if is_new_day
+    orb_high       := na
+    orb_low        := na
+    orb_set        := false
+    orb_broke_up   := false
+    orb_broke_down := false
+
+if time >= ny_open_time and time < orb_end_time
+    orb_high := na(orb_high) ? high : math.max(orb_high, high)
+    orb_low  := na(orb_low)  ? low  : math.min(orb_low,  low)
+
+if time >= orb_end_time and not na(orb_high) and not orb_set
+    orb_set := true
+
+bool orb_cond_up   = use_alerts_orb and orb_set and not orb_broke_up
+                     and close > orb_high
+                     and volume > vol_avg * vol_mult_orb
+                     and trend_bull_ok        // ← NOUVEAU : EMA confirme direction
+                     and barstate.isconfirmed
+
+bool orb_cond_down = use_alerts_orb and orb_set and not orb_broke_down
+                     and close < orb_low
+                     and volume > vol_avg * vol_mult_orb
+                     and trend_bear_ok        // ← NOUVEAU : EMA confirme direction
+                     and barstate.isconfirmed
+
+bool orb_break_up   = orb_cond_up
+bool orb_break_down = orb_cond_down
+
+string _orb_range = str.tostring(orb_low, "#.##") + "–" + str.tostring(orb_high, "#.##")
+
+if orb_break_up
+    orb_broke_up := true
+    alert("🚀 " + syminfo.ticker + " ORB BREAK UP" +
+         " | ORB " + _orb_range +
+         " | Breakout: " + str.tostring(close, "#.##") +
+         " | " + ema_trend_str + " EMA" + str.tostring(ema_len) + ": " + _ema_str +
+         " | Vol: " + str.tostring(math.round(volume / vol_avg * 10) / 10, "#.#") + "x" +
+         " | NY " + bar_time_str, alert.freq_once_per_bar_close)
+
+if orb_break_down
+    orb_broke_down := true
+    alert("🚨 " + syminfo.ticker + " ORB BREAK DOWN" +
+         " | ORB " + _orb_range +
+         " | Breakdown: " + str.tostring(close, "#.##") +
+         " | " + ema_trend_str + " EMA" + str.tostring(ema_len) + ": " + _ema_str +
+         " | Vol: " + str.tostring(math.round(volume / vol_avg * 10) / 10, "#.#") + "x" +
+         " | NY " + bar_time_str, alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE VISUEL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── EMA de tendance (change de couleur selon position du prix) ────────────────
+ema_plot_color = above_ema ? ema_color_bull : ema_color_bear
+plot(ema_trend, "EMA Trend", color=ema_plot_color, linewidth=2)
+
+// ── VWAP (ancré NY open — s'affiche uniquement pendant la session) ────────────
+plot(vwap_val, "VWAP", color=color.new(color.white, 30), linewidth=2)
+
+// ── Niveaux clés ──────────────────────────────────────────────────────────────
+plot(lvl1_on and lvl1_val > 0 ? lvl1_val : na, "Level 1", color=color.new(color.green,  20), linewidth=1, style=plot.style_line)
+plot(lvl2_on and lvl2_val > 0 ? lvl2_val : na, "Level 2", color=color.new(color.red,    20), linewidth=1, style=plot.style_line)
+plot(lvl3_on and lvl3_val > 0 ? lvl3_val : na, "Level 3", color=color.new(color.orange, 20), linewidth=1, style=plot.style_line)
+plot(lvl4_on and lvl4_val > 0 ? lvl4_val : na, "Level 4", color=color.new(color.blue,   20), linewidth=1, style=plot.style_line)
+plot(lvl5_on and lvl5_val > 0 ? lvl5_val : na, "Level 5", color=color.new(color.purple, 20), linewidth=1, style=plot.style_line)
+
+// ── ORB high/low ──────────────────────────────────────────────────────────────
+plot(orb_set ? orb_high : na, "ORB High", color=color.new(color.yellow, 0), linewidth=1, style=plot.style_linebr)
+plot(orb_set ? orb_low  : na, "ORB Low",  color=color.new(color.yellow, 0), linewidth=1, style=plot.style_linebr)
+
+// ── Marqueurs visuels ─────────────────────────────────────────────────────────
+plotshape(any_lvl_break_up,   "Level Break Up",   style=shape.triangleup,   location=location.belowbar, color=color.lime,   size=size.small)
+plotshape(any_lvl_break_down, "Level Break Down", style=shape.triangledown, location=location.abovebar, color=color.red,    size=size.small)
+plotshape(vwap_reclaim,       "VWAP Reclaim",     style=shape.circle,       location=location.belowbar, color=color.aqua,   size=size.tiny)
+plotshape(vwap_rejection,     "VWAP Rejection",   style=shape.circle,       location=location.abovebar, color=color.orange, size=size.tiny)
+plotshape(orb_break_up,       "ORB Up",           style=shape.labelup,      location=location.belowbar, color=color.yellow, textcolor=color.black, text="ORB↑", size=size.small)
+plotshape(orb_break_down,     "ORB Down",         style=shape.labeldown,    location=location.abovebar, color=color.yellow, textcolor=color.black, text="ORB↓", size=size.small)
+
+// ── Fond coloré sur les spikes de volume ──────────────────────────────────────
+bgcolor(vol_spike_bull ? color.new(color.green, 88) : na, title="Vol Spike Bull BG")
+bgcolor(vol_spike_bear ? color.new(color.red,   88) : na, title="Vol Spike Bear BG")
+
+// ── Fond clair indiquant la tendance EMA globale ──────────────────────────────
+bgcolor(use_ema_filter and above_ema ? color.new(color.green, 97) : na, title="Tendance EMA Bull")
+bgcolor(use_ema_filter and below_ema ? color.new(color.red,   97) : na, title="Tendance EMA Bear")
+
+// ── Tableau de bord (7 lignes avec EMA) ──────────────────────────────────────
+var table dash = table.new(position.bottom_right, 2, 7,
+     bgcolor=color.new(color.black, 75), border_width=1, border_color=color.new(color.gray, 60))
+
+if barstate.islast
+    table.cell(dash, 0, 0, "Smart Alerts", text_color=color.white, text_size=size.small,
+         bgcolor=color.new(color.navy, 50))
+    table.cell(dash, 1, 0, syminfo.ticker + " " + timeframe.period + "m",
+         text_color=color.yellow, text_size=size.small, bgcolor=color.new(color.navy, 50))
+
+    table.cell(dash, 0, 1, "EMA " + str.tostring(ema_len), text_color=color.white, text_size=size.small)
+    string ema_display = str.tostring(ema_trend, "#.##")
+    table.cell(dash, 1, 1, (above_ema ? "↑ " : "↓ ") + ema_display,
+         text_color=above_ema ? color.lime : color.red, text_size=size.small)
+
+    table.cell(dash, 0, 2, "VWAP",      text_color=color.white, text_size=size.small)
+    string vwap_display = not na(vwap_val) ? str.tostring(vwap_val, "#.##") : "Hors session"
+    table.cell(dash, 1, 2, vwap_display,
+         text_color=not na(vwap_val) ? (close > vwap_val ? color.lime : color.red) : color.gray,
+         text_size=size.small)
+
+    table.cell(dash, 0, 3, "Vol ratio", text_color=color.white, text_size=size.small)
+    vol_ratio = math.round(volume / vol_avg * 10) / 10
+    table.cell(dash, 1, 3, str.tostring(vol_ratio) + "x",
+         text_color=vol_ratio > vol_spike_mult ? color.yellow : vol_ratio > vol_mult_lvl ? color.lime : color.gray,
+         text_size=size.small)
+
+    table.cell(dash, 0, 4, "RSI",       text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 4, str.tostring(math.round(rsi_val)),
+         text_color=rsi_val > 70 ? color.red : rsi_val < 30 ? color.lime : color.white,
+         text_size=size.small)
+
+    table.cell(dash, 0, 5, "ORB",       text_color=color.white, text_size=size.small)
+    orb_status = not orb_set ? "En construction" :
+                 orb_broke_up and orb_broke_down ? "↑↓ Les deux" :
+                 orb_broke_up   ? "↑ Cassé haut" :
+                 orb_broke_down ? "↓ Cassé bas"  : "✓ Défini"
+    table.cell(dash, 1, 5, orb_status,
+         text_color=orb_broke_up or orb_broke_down ? color.yellow : orb_set ? color.lime : color.gray,
+         text_size=size.small)
+
+    table.cell(dash, 0, 6, "Session",   text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 6, in_session ? "NY Open ✓" : "Hors session",
+         text_color=in_session ? color.lime : color.gray, text_size=size.small)

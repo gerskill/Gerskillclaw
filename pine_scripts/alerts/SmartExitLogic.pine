@@ -1,0 +1,329 @@
+//@version=6
+indicator("Smart Exit Logic — Tier 3", overlay=true, shorttitle="SEL",
+     max_lines_count=10, max_labels_count=30)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES
+// ═══════════════════════════════════════════════════════════════════════════════
+grp_sl = "══ STOP LOSS ADAPTATIF ══"
+atr_len         = input.int(14,   "ATR Length",               group=grp_sl)
+mult_trend      = input.float(2.0,"Multiplier ATR (trend)",   group=grp_sl, step=0.1,
+     tooltip="ADX > 25 : stop large pour tenir les trends")
+mult_range      = input.float(1.2,"Multiplier ATR (range)",   group=grp_sl, step=0.1,
+     tooltip="ADX < 20 : stop serré en marché latéral")
+adx_len         = input.int(14,   "ADX Length",               group=grp_sl)
+adx_trend_thr   = input.int(25,   "ADX seuil trend",          group=grp_sl)
+adx_range_thr   = input.int(20,   "ADX seuil range",          group=grp_sl)
+
+grp_trail = "══ TRAILING STRUCTUREL ══"
+trail_bars      = input.int(3,    "Lookback structure (bars)", group=grp_trail, minval=1, maxval=10,
+     tooltip="Nb de bougies en arrière pour le plus bas (long) ou plus haut (short)")
+rsi_accel_thr   = input.int(70,   "RSI seuil accélération",   group=grp_trail,
+     tooltip="Si RSI > ce seuil pour un long, le trail se resserre au dernier plus bas")
+
+grp_tp = "══ TARGETS PARTIELS ══"
+tp1_atr_mult    = input.float(1.0,"TP1 (× ATR)",  group=grp_tp, step=0.25)
+tp2_atr_mult    = input.float(2.0,"TP2 (× ATR)",  group=grp_tp, step=0.25)
+tp1_pct         = input.int(50,   "TP1 exit %",   group=grp_tp, minval=10, maxval=90)
+tp2_pct         = input.int(30,   "TP2 exit %",   group=grp_tp, minval=10, maxval=80)
+
+grp_time = "══ TIME STOP ══"
+use_time_stop   = input.bool(true, "Activer Time Stop",         group=grp_time)
+time_stop_min   = input.int(30,    "Sortie si flat après (min)",group=grp_time, minval=5, maxval=120)
+flat_pct        = input.float(0.3, "Seuil P&L 'flat' %",       group=grp_time, step=0.1,
+     tooltip="Si P&L < ce % après N minutes → sortie obligatoire")
+avoid_lunch     = input.bool(true, "Éviter midi (11:30–13:30)", group=grp_time)
+
+grp_entry = "══ ENTRÉE SIMULÉE ══"
+entry_mode      = input.string("Manuel", "Mode entrée",
+     options=["Manuel","Auto-Long","Auto-Short"], group=grp_entry)
+manual_entry    = input.float(0.0, "Prix d'entrée manuel",  group=grp_entry, step=0.01,
+     tooltip="Entrez votre prix d'entrée ici après avoir ouvert une position")
+manual_side     = input.string("Long", "Côté",
+     options=["Long","Short"], group=grp_entry)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALCULS DE BASE
+// ═══════════════════════════════════════════════════════════════════════════════
+atr_val = ta.atr(atr_len)
+rsi_val = ta.rsi(close, 14)
+
+// ADX manuel (Pine v6 n'a pas ta.adx() — on le calcule)
+[_di_plus, _di_minus, adx_val] = ta.dmi(adx_len, adx_len)
+
+// Multiplicateur ATR adaptatif selon ADX
+float atr_mult = adx_val >= adx_trend_thr ? mult_trend :
+                 adx_val <= adx_range_thr  ? mult_range :
+                 mult_range + (mult_trend - mult_range) *
+                 (adx_val - adx_range_thr) / (adx_trend_thr - adx_range_thr)
+
+// Session NY
+ny_lunch_start = timestamp("America/New_York", year, month, dayofmonth, 11, 30, 0)
+ny_lunch_end   = timestamp("America/New_York", year, month, dayofmonth, 13, 30, 0)
+bool in_lunch  = time >= ny_lunch_start and time <= ny_lunch_end
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ÉTAT DU TRADE SIMULÉ
+// ═══════════════════════════════════════════════════════════════════════════════
+var float entry_px    = na      // Prix d'entrée
+var int   entry_bar   = na      // Bar d'entrée
+var int   trade_dir   = 0       // 1=long, -1=short, 0=flat
+var float sl_current  = na      // SL courant (mis à jour chaque bar)
+var float tp1_px      = na
+var float tp2_px      = na
+var float trail_sl    = na      // Trailing stop structurel
+var bool  be_active   = false   // Breakeven actif
+var bool  tp1_hit     = false
+var bool  tp2_hit     = false
+
+// ── Déterminer l'entrée ───────────────────────────────────────────────────────
+bool new_long  = false
+bool new_short = false
+
+if entry_mode == "Manuel" and manual_entry > 0
+    // Détection du changement de prix d'entrée = nouvelle position
+    if manual_entry != manual_entry[1] or trade_dir == 0
+        if manual_side == "Long"
+            new_long := true
+        else
+            new_short := true
+else if entry_mode == "Auto-Long"
+    // Signal automatique : croisement EMA 9/20 haussier
+    ema9  = ta.ema(close, 9)
+    ema20 = ta.ema(close, 20)
+    new_long  := ta.crossover(ema9, ema20)
+    new_short := ta.crossunder(ema9, ema20)
+else if entry_mode == "Auto-Short"
+    ema9s  = ta.ema(close, 9)
+    ema20s = ta.ema(close, 20)
+    new_short := ta.crossunder(ema9s, ema20s)
+
+// ── Ouverture de position ─────────────────────────────────────────────────────
+if new_long
+    entry_px    := entry_mode == "Manuel" ? manual_entry : close
+    entry_bar   := bar_index
+    trade_dir   := 1
+    sl_current  := entry_px - atr_mult * atr_val
+    trail_sl    := sl_current
+    tp1_px      := entry_px + tp1_atr_mult * atr_val
+    tp2_px      := entry_px + tp2_atr_mult * atr_val
+    be_active   := false
+    tp1_hit     := false
+    tp2_hit     := false
+
+if new_short
+    entry_px    := entry_mode == "Manuel" ? manual_entry : close
+    entry_bar   := bar_index
+    trade_dir   := -1
+    sl_current  := entry_px + atr_mult * atr_val
+    trail_sl    := sl_current
+    tp1_px      := entry_px - tp1_atr_mult * atr_val
+    tp2_px      := entry_px - tp2_atr_mult * atr_val
+    be_active   := false
+    tp1_hit     := false
+    tp2_hit     := false
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MISE À JOUR DU TRAILING STOP STRUCTUREL
+// ═══════════════════════════════════════════════════════════════════════════════
+if trade_dir == 1 and not na(entry_px)
+    // Structure : plus bas des N dernières bougies
+    float struct_low = ta.lowest(low, trail_bars)
+
+    // Accélération si RSI overbought : utiliser le low de la bougie précédente seulement
+    float new_trail = rsi_val > rsi_accel_thr ? low[1] : struct_low
+
+    // Breakeven : si TP1 touché → remonter le SL à entry_px
+    if be_active
+        new_trail := math.max(new_trail, entry_px)
+
+    // Le trailing ne descend jamais (ratchet up)
+    trail_sl    := math.max(nz(trail_sl, new_trail), new_trail)
+    sl_current  := trail_sl
+
+if trade_dir == -1 and not na(entry_px)
+    float struct_high = ta.highest(high, trail_bars)
+    float new_trail_s = rsi_val < (100 - rsi_accel_thr) ? high[1] : struct_high
+    if be_active
+        new_trail_s := math.min(new_trail_s, entry_px)
+    trail_sl    := math.min(nz(trail_sl, new_trail_s), new_trail_s)
+    sl_current  := trail_sl
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DÉTECTION DES ÉVÉNEMENTS DE SORTIE
+// ═══════════════════════════════════════════════════════════════════════════════
+bool exit_sl       = false
+bool exit_tp1      = false
+bool exit_tp2      = false
+bool exit_time     = false
+bool exit_lunch    = false
+
+int bars_in_trade  = na(entry_bar) ? 0 : bar_index - entry_bar
+float pnl_pct      = na
+
+if trade_dir == 1 and not na(entry_px)
+    pnl_pct    := (close - entry_px) / entry_px * 100
+
+    // SL touché
+    exit_sl    := close < sl_current and not exit_sl[1]
+
+    // TP1
+    if not tp1_hit and close >= tp1_px
+        exit_tp1   := true
+        tp1_hit    := true
+        be_active  := true   // SL remonte à breakeven
+
+    // TP2
+    if tp1_hit and not tp2_hit and close >= tp2_px
+        exit_tp2   := true
+        tp2_hit    := true
+
+    // Time stop
+    int tf_min = timeframe.in_seconds() / 60
+    exit_time  := use_time_stop
+                  and (bars_in_trade * tf_min) >= time_stop_min
+                  and pnl_pct < flat_pct
+
+    // Lunch stop
+    exit_lunch := avoid_lunch and in_lunch and not in_lunch[1]
+
+if trade_dir == -1 and not na(entry_px)
+    pnl_pct    := (entry_px - close) / entry_px * 100
+    exit_sl    := close > sl_current and not exit_sl[1]
+    if not tp1_hit and close <= tp1_px
+        exit_tp1   := true
+        tp1_hit    := true
+        be_active  := true
+    if tp1_hit and not tp2_hit and close <= tp2_px
+        exit_tp2   := true
+        tp2_hit    := true
+    int tf_min2 = timeframe.in_seconds() / 60
+    exit_time  := use_time_stop
+                  and (bars_in_trade * tf_min2) >= time_stop_min
+                  and pnl_pct < flat_pct
+    exit_lunch := avoid_lunch and in_lunch and not in_lunch[1]
+
+// Fermer la position sur SL ou time stop
+if exit_sl or exit_time or exit_lunch
+    trade_dir  := 0
+    entry_px   := na
+    sl_current := na
+    trail_sl   := na
+    tp1_px     := na
+    tp2_px     := na
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTES (niveau global — Pine v6)
+// ═══════════════════════════════════════════════════════════════════════════════
+string _px    = str.tostring(close, "#.##")
+string _pnl   = not na(pnl_pct) ? str.tostring(math.round(pnl_pct * 100) / 100, "#.##") + "%" : "—"
+string _time_held = str.tostring((bar_index - nz(entry_bar, bar_index)) *
+     (timeframe.in_seconds() / 60)) + "min"
+
+if exit_sl
+    alert("🛑 " + syminfo.ticker + " SL EXIT at " + _px +
+         " | P&L: " + _pnl + " | Held: " + _time_held, alert.freq_once_per_bar_close)
+
+if exit_tp1
+    alert("🎯 " + syminfo.ticker + " TP1 (" + str.tostring(tp1_pct) + "%) at " + _px +
+         " | P&L: " + _pnl + " | SL → Breakeven", alert.freq_once_per_bar_close)
+
+if exit_tp2
+    alert("🎯 " + syminfo.ticker + " TP2 (" + str.tostring(tp2_pct) + "%) at " + _px +
+         " | P&L: " + _pnl, alert.freq_once_per_bar_close)
+
+if exit_time
+    alert("⏱ " + syminfo.ticker + " TIME STOP at " + _px +
+         " | Flat after " + _time_held + " | P&L: " + _pnl, alert.freq_once_per_bar_close)
+
+if exit_lunch
+    alert("🍽 " + syminfo.ticker + " LUNCH STOP at " + _px +
+         " | Avoid midday chop", alert.freq_once_per_bar_close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AFFICHAGE VISUEL
+// ═══════════════════════════════════════════════════════════════════════════════
+bool in_trade = trade_dir != 0 and not na(entry_px)
+
+// ── Ligne SL adaptive ─────────────────────────────────────────────────────────
+plot(in_trade ? sl_current : na, "SL Adaptatif",
+     color = be_active ? color.new(color.orange, 0) : color.new(color.red, 0),
+     linewidth=2, style=plot.style_line)
+
+// ── Targets ───────────────────────────────────────────────────────────────────
+plot(in_trade and not tp1_hit ? tp1_px : na, "TP1",
+     color=color.new(color.lime, 30), linewidth=1, style=plot.style_line)
+plot(in_trade and not tp2_hit ? tp2_px : na, "TP2",
+     color=color.new(color.green, 20), linewidth=1, style=plot.style_line)
+
+// ── Prix d'entrée ─────────────────────────────────────────────────────────────
+plot(in_trade ? entry_px : na, "Entrée",
+     color=color.new(color.white, 40), linewidth=1, style=plot.style_line)
+
+// ── Zone de risque (fill entry → SL) ─────────────────────────────────────────
+entry_plot = plot(in_trade ? entry_px   : na, color=na)
+sl_plot    = plot(in_trade ? sl_current : na, color=na)
+fill(entry_plot, sl_plot,
+     color = trade_dir == 1  ? color.new(color.red,   88) :
+             trade_dir == -1 ? color.new(color.green, 88) : na,
+     title="Zone de risque")
+
+// ── Marqueurs de sortie ───────────────────────────────────────────────────────
+plotshape(exit_sl,    "SL hit",    style=shape.xcross,      location=location.abovebar, color=color.red,    size=size.small)
+plotshape(exit_tp1,   "TP1 hit",   style=shape.triangledown,location=location.abovebar, color=color.lime,   size=size.small)
+plotshape(exit_tp2,   "TP2 hit",   style=shape.triangledown,location=location.abovebar, color=color.green,  size=size.small)
+plotshape(exit_time,  "Time stop", style=shape.square,       location=location.abovebar, color=color.orange, size=size.small)
+plotshape(exit_lunch, "Lunch stop",style=shape.square,       location=location.abovebar, color=color.yellow, size=size.tiny)
+
+// ── Fond lunch ────────────────────────────────────────────────────────────────
+bgcolor(avoid_lunch and in_lunch ? color.new(color.yellow, 94) : na, title="Lunch zone")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TABLEAU DE BORD
+// ═══════════════════════════════════════════════════════════════════════════════
+var table dash = table.new(position.top_left, 2, 8,
+     bgcolor=color.new(color.black, 78), border_width=1,
+     border_color=color.new(color.gray, 60))
+
+if barstate.islast
+    string dir_txt = trade_dir == 1 ? "📈 LONG" : trade_dir == -1 ? "📉 SHORT" : "— Flat"
+    color  dir_col = trade_dir == 1 ? color.lime : trade_dir == -1 ? color.red : color.gray
+
+    table.cell(dash, 0, 0, "Smart Exit Logic", text_color=color.white, text_size=size.small,
+         bgcolor=color.new(color.navy, 50))
+    table.cell(dash, 1, 0, syminfo.ticker, text_color=color.yellow,
+         text_size=size.small, bgcolor=color.new(color.navy, 50))
+
+    table.cell(dash, 0, 1, "Position",    text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 1, dir_txt,       text_color=dir_col,     text_size=size.small)
+
+    table.cell(dash, 0, 2, "ATR",         text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 2, str.tostring(atr_val, "#.##"),
+         text_color=color.aqua, text_size=size.small)
+
+    table.cell(dash, 0, 3, "ADX / Mode",  text_color=color.white, text_size=size.small)
+    string adx_mode = adx_val >= adx_trend_thr ? "Trend ▲" :
+                      adx_val <= adx_range_thr  ? "Range —" : "Transition"
+    table.cell(dash, 1, 3, str.tostring(math.round(adx_val)) + " " + adx_mode,
+         text_color=adx_val >= adx_trend_thr ? color.lime : color.orange,
+         text_size=size.small)
+
+    table.cell(dash, 0, 4, "Mult ATR actuel", text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 4, str.tostring(math.round(atr_mult * 10) / 10, "#.#") + "×",
+         text_color=color.aqua, text_size=size.small)
+
+    table.cell(dash, 0, 5, "SL actuel",   text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 5, not na(sl_current) ? str.tostring(sl_current, "#.##") : "—",
+         text_color=be_active ? color.orange : color.red, text_size=size.small)
+
+    table.cell(dash, 0, 6, "P&L courant", text_color=color.white, text_size=size.small)
+    string pnl_txt = not na(pnl_pct) ? str.tostring(math.round(pnl_pct * 100) / 100, "#.##") + "%" : "—"
+    table.cell(dash, 1, 6, pnl_txt,
+         text_color= not na(pnl_pct) and pnl_pct > 0 ? color.lime :
+                     not na(pnl_pct) and pnl_pct < 0 ? color.red : color.gray,
+         text_size=size.small)
+
+    table.cell(dash, 0, 7, "RSI",         text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 7, str.tostring(math.round(rsi_val)),
+         text_color= rsi_val > 70 ? color.red : rsi_val < 30 ? color.lime : color.white,
+         text_size=size.small)

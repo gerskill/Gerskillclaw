@@ -1,0 +1,45 @@
+=== RAPPORT HEBDOMADAIRE POUR ANALYSE CLAUDE ===
+Période : 07/04/2026 – 11/04/2026
+Compte : $25,000 | Risk target : 1.0%
+
+--- MÉTRIQUES CORE ---
+Total trades: 27
+Wins / Losses: 17 / 10
+Win rate: 63.0%
+Avg win: $43.74
+Avg loss: $-24.70
+Win/Loss ratio: 1.77x
+Profit factor: 3.01
+Net P&L: $496.50
+Expectancy/trade: $18.39
+Largest win: $75.00
+Largest loss: $-36.00
+Max consec. losses: 2
+
+--- PAR SYMBOLE ---
+NVDA: 10 trades | WR 70% | Net $312 | PF 4.76
+AAPL: 6 trades | WR 67% | Net $102 | PF 2.50
+TSLA: 8 trades | WR 50% | Net $75 | PF 1.83
+SPY: 3 trades | WR 67% | Net $8 | PF 2.25
+
+--- PAR SETUP ---
+ORB: 6 trades | WR 83% | Net $326 | PF 55.42
+level break: 4 trades | WR 75% | Net $119 | PF 6.29
+VWAP rejection: 3 trades | WR 100% | Net $72 | PF inf
+pullback: 5 trades | WR 60% | Net $30 | PF 1.73
+momentum: 7 trades | WR 43% | Net $18 | PF 1.16
+VWAP reclaim: 2 trades | WR 0% | Net $-68 | PF 0.00
+
+--- PAR HEURE ---
+Open 09:30–10:00: 7 trades | WR 71% | Net $294 | PF 8.75
+Afternoon 13:30–15:00: 5 trades | WR 80% | Net $124 | PF 6.49
+Midday 11:30–13:30: 2 trades | WR 100% | Net $42 | PF 42000000000.00
+Late AM 10:00–11:30: 13 trades | WR 46% | Net $36 | PF 1.20
+
+--- COMPORTEMENTAL ---
+Revenge trades détectés: 9
+P&L des revenge trades: $284.50
+Jours d'overtrading (>6 trades): 1
+Avg P&L jour normal: $97.12
+Avg P&L jour overtrading: $108.00
+Trades dépassant risk target: 2

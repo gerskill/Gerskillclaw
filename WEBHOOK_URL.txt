@@ -1,0 +1,18 @@
+WEBHOOK URL ACTIVE (Cloudflare Tunnel)
+========================================
+URL publique : https://that-illustration-spanking-resource.trycloudflare.com/webhook
+Health check  : https://that-illustration-spanking-resource.trycloudflare.com/health
+Signaux reçus : https://that-illustration-spanking-resource.trycloudflare.com/signals
+
+⚠ IMPORTANT : cette URL change à chaque redémarrage de cloudflared.
+Pour relancer le pipeline complet :
+  1. python3 webhook_server.py
+  2. cloudflared tunnel --url http://localhost:5001
+  3. Copier nouvelle URL → mettre à jour les 4 alertes TradingView
+
+MESSAGES D'ALERTE TRADINGVIEW :
+--------------------------------
+A★ LONG  : {"setup":"A*","dir":"LONG","ticker":"{{ticker}}","tf":"{{interval}}","price":"{{close}}","exchange":"{{exchange}}"}
+A★ SHORT : {"setup":"A*","dir":"SHORT","ticker":"{{ticker}}","tf":"{{interval}}","price":"{{close}}","exchange":"{{exchange}}"}
+B LONG   : {"setup":"B","dir":"LONG","ticker":"{{ticker}}","tf":"{{interval}}","price":"{{close}}","exchange":"{{exchange}}"}
+B SHORT  : {"setup":"B","dir":"SHORT","ticker":"{{ticker}}","tf":"{{interval}}","price":"{{close}}","exchange":"{{exchange}}"}

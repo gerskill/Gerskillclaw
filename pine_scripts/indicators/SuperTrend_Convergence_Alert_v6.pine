@@ -1,0 +1,123 @@
+//@version=6 indicator('SuperTrend Convergence Alert', shorttitle = 'ST_Conv_Al', overlay = true, max_boxes_count = 500)
+
+// --- INPUTS ---
+showST1 = input.bool(true, 'SuperTrend 2 6 1', group = 'ST1')
+showST2 = input.bool(true, 'SuperTrend 4 11 2', group = 'ST2')
+showSpread = input.bool(true, 'Volatility Spread', group = 'Spread')
+displaySignals = input.bool(true, 'Show Buy/Sell Signals', group = 'Signals')
+signalBars = input.int(3, 'Bars before signal', minval = 1, maxval = 10, group = 'Signals')
+confirmBars = input.int(5, 'Confirm bars (5m candles)', minval = 1, maxval = 20, group = 'Signals')
+
+// --- SUPER TREND CALCULATION ---
+st1(source, period, multiplier, atrPeriod) =>
+    atrLength = atrPeriod
+    atrMult = multiplier
+    atrVal = ta.atr(atrLength)
+    up = source - atrMult * atrVal
+    down = source + atrMult * atrVal
+    trend = 1
+    upValue = source
+    downValue = source
+    tr = ta.tr
+    upValue := trend == 1 and source > up ? math.max(up, down) : up
+    downValue := trend == -1 and source < down ? math.min(up, down) : down
+    trend := source > upValue ? 1 : source < downValue ? -1 : trend
+    [trend, trend > 0 ? upValue : downValue]
+
+// SuperTrend 2 6 1 (short term)
+[trend1, st1Value] = st1(close, 2, 6, 1)
+isSt1Up = trend1 == 1
+isSt1Down = trend1 == -1
+
+// SuperTrend 4 11 2 (long term)
+[trend2, st2Value] = st1(close, 4, 11, 2)
+isSt2Up = trend2 == 1
+isSt2Down = trend2 == -1
+
+// --- SPREAD & VOLATILITY ---
+spread = math.abs(st1Value - st2Value)
+avgSpread = ta.sma(spread, 20)
+volatilityRatio = spread / avgSpread
+
+// Convergence imminent signal
+convergenceHigh = volatilityRatio > 1.8
+convergenceWarn = volatilityRatio > 1.5
+
+// --- SIGNAL DETECTION ---
+// Change de signal pour ST 2 6 1
+prevTrend1 = ta.change(trend1) != 0
+
+// Changement baissier (viral signal)
+isSellSignal = (trend1 == 0 and prevTrend1)
+
+// Changement haussier (buy signal)
+isBuySignal = prevTrend1 and trend1 == 1
+
+// Confirm signal après X bougies
+barsSinceSignal = barstate.islast ? 0 : ta.barssince(isSellSignal or isBuySignal)
+
+// Afficher signal après N bougies
+buySignal = isBuySignal and barsSinceSignal >= confirmBars
+sellSignal = isSellSignal and barsSinceSignal >= confirmBars
+
+// --- PLOTTING ---
+// SuperTrend 1
+plot(showST1 ? st1Value : na, 'ST 2 6 1', color = isSt1Up ? color.new(color.green, 70) : color.new(color.red, 70), linewidth = 1, style = plot.style_linebr)
+
+// SuperTrend 2
+plot(showST2 ? st2Value : na, 'ST 4 11 2', color = isSt2Up ? color.new(color.blue, 70) : color.new(color.orange, 70), linewidth = 1, style = plot.style_linebr)
+
+// Spread
+plot(showSpread ? spread : na, 'Spread', color = color.gray, linewidth = 1, style = plot.style_area)
+
+// Volatility Level
+plotshape(showSpread and convergenceHigh, 'High Volatility', shape.diamond, location.belowbar, color.red, size = size.small)
+plotshape(showSpread and convergenceWarn, 'Medium Volatility', shape.triangleup, location.abovebar, color.yellow, size = size.small)
+
+// Signal Arrows
+plotshape(displaySignals and buySignal, 'Buy Signal', shape.labelup, location.belowbar, color.new(color.green, 0), text = 'BUY', textcolor = color.black, size = size.tiny)
+plotshape(displaySignals and sellSignal, 'Sell Signal', shape.labeldown, location.abovebar, color.new(color.red, 0), text = 'SELL', textcolor = color.white, size = size.tiny)
+
+// --- LABELS ---
+// Volatility labels
+if convergenceHigh and showSpread and not ta.change(convergenceHigh)
+    label.new(bar_index, low, 'HIGH VOL', color = color.new(color.red, 80), textcolor = color.red, style = label.style_label_up, size = size.small)
+
+if convergenceWarn and showSpread and not ta.change(convergenceWarn)
+    label.new(bar_index, high, 'WARN VOL', color = color.new(color.yellow, 80), textcolor = color.yellow, style = label.style_label_down, size = size.small)
+
+// Signal labels
+if buySignal
+    label.new(bar_index, low, 'BUY ' + 'ST1: ' + (isSt1Up ? 'UP' : 'DN') + ' ST2: ' + (isSt2Up ? 'UP' : 'DN'), color = color.new(color.green, 20), textcolor = color.white, style = label.style_label_down, size = size.small)
+
+if sellSignal
+    label.new(bar_index, high, 'SELL ' + 'ST1: ' + (isSt1Up ? 'UP' : 'DN') + ' ST2: ' + (isSt2Up ? 'UP' : 'DN'), color = color.new(color.red, 20), textcolor = color.white, style = label.style_label_up, size = size.small)
+
+// --- INFO PANEL ---
+var table infoTable = table.new(position.top_right, 2, 6, bgcolor = color.new(color.black, 80), border_width = 1)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, 'ST1 (2/6/1)', text_color = color.white, bgcolor = color.new(color.gray, 70))
+    table.cell(infoTable, 1, 0, isSt1Up ? '▲ UP' : '▼ DN', text_color = isSt1Up ? color.green : color.red, bgcolor = color.new(isSt1Up ? color.green : color.red, 70))
+
+    table.cell(infoTable, 0, 1, 'ST2 (4/11/2)', text_color = color.white, bgcolor = color.new(color.gray, 70))
+    table.cell(infoTable, 1, 1, isSt2Up ? '▲ UP' : '▼ DN', text_color = isSt2Up ? color.blue : color.orange, bgcolor = color.new(isSt2Up ? color.blue : color.orange, 70))
+
+    table.cell(infoTable, 0, 2, 'Spread', text_color = color.white, bgcolor = color.new(color.gray, 70))
+    table.cell(infoTable, 1, 2, str.tostring(spread, '#.##'), text_color = color.white, bgcolor = color.new(color.gray, 70))
+
+    table.cell(infoTable, 0, 3, 'Volatility Ratio', text_color = color.white, bgcolor = color.new(color.gray, 70))
+    table.cell(infoTable, 1, 3, str.tostring(volatilityRatio, '#.##'), text_color = volatilityRatio > 1.8 ? color.red : volatilityRatio > 1.5 ? color.yellow : color.green, bgcolor = color.new(volatilityRatio > 1.8 ? color.red : volatilityRatio > 1.5 ? color.yellow : color.green, 70))
+
+    table.cell(infoTable, 0, 4, 'Convergence', text_color = color.white, bgcolor = color.new(color.gray, 70))
+    convergenceStatus = convergenceHigh ? 'HIGH' : convergenceWarn ? 'WARN' : 'LOW'
+    table.cell(infoTable, 1, 4, convergenceStatus, text_color = convergenceHigh ? color.red : convergenceWarn ? color.yellow : color.green, bgcolor = color.new(convergenceHigh ? color.red : convergenceWarn ? color.yellow : color.green, 70))
+
+    table.cell(infoTable, 0, 5, 'Bars since signal', text_color = color.white, bgcolor = color.new(color.gray, 70))
+    table.cell(infoTable, 1, 5, str.tostring(barsSinceSignal, '#'), text_color = color.white, bgcolor = color.new(color.gray, 70))
+
+// --- ALERTS ---
+alertcondition(buySignal, title = 'BUY Signal', message = 'BUY Signal detected on {{ticker}} ST1: {{plot_1}} ST2: {{plot_2}} Spread: {{plot_3}}')
+alertcondition(sellSignal, title = 'SELL Signal', message = 'SELL Signal detected on {{ticker}} ST1: {{plot_1}} ST2: {{plot_2}} Spread: {{plot_3}}')
+alertcondition(convergenceHigh, title = 'High Volatility', message = 'HIGH VOLATILITY detected on {{ticker}} Large spread between ST1 and ST2 Convergence imminent!')
+alertcondition(convergenceWarn, title = 'Medium Volatility', message = 'WARN VOLATILITY detected on {{ticker}} Moderate spread between ST1 and ST2')

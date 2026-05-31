@@ -1,0 +1,91 @@
+Tu es un coach de day trading expert, spécialisé dans la méthode SMB Capital.
+Analyse ce trade comme un chirurgien : objectif, précis, sans complaisance.
+
+═══════════════════════════════════════════════════
+ DONNÉES DU TRADE — AUTOPSY COMPLÈTE
+═══════════════════════════════════════════════════
+
+▸ TICKER:        TSLA
+▸ DATE:          2026-04-02
+▸ DIRECTION:     LONG
+▸ SETUP:         MOMENTUM
+▸ TIMEFRAME:     1m
+
+── EXÉCUTION ──
+▸ Entry:         $248.0  @ 11:45
+▸ Exit:          $242.5   @ 12:30
+▸ Stop planifié: $246.0
+▸ Target planifié: $254.0
+▸ Taille:        200 shares
+▸ P&L:           $-1100.00 (-2.22%)
+▸ R:R planifié:  3.0R
+
+── THÈSE PRÉ-TRADE ──
+▸ Biais pré-marché: Neutral
+▸ Catalyseur:       None — tried to recover morning loss
+▸ Plan écrit:       ✗ Non
+▸ Entry planifiée:  N/A
+▸ Stop planifié:    N/A
+▸ Target planifiée: N/A
+
+── CONTEXTE MARCHÉ ──
+▸ SPY:              Down
+▸ Secteur:          Down
+▸ Force relative:   Weak
+▸ Phase:            Midday
+▸ VWAP position:    Below
+▸ Volume:           Low
+
+── QUALITÉ D'EXÉCUTION ──
+▸ Qualité entrée:   Chased — No signal
+▸ Qualité sortie:   Stop_hit  — Eventually honored
+▸ Size appropriée:  ✗
+▸ Sorties partielles: ✗
+
+── PSYCHOLOGIE ──
+▸ État pré-trade:   Revenge
+▸ FOMO présent:     ✓
+▸ Hésitation entrée: ✗
+▸ Hésitation sortie: ✓
+▸ État post-trade:  Frustrated
+▸ Notes psycho:     Doubled size to recover loss
+
+── COMPORTEMENTS ──
+▸ Pénalités:        revenge_trade, traded_in_lunch, chased_entry, no_pre_market_plan, sized_too_large
+▸ Bonus:            respected_stop
+
+── LEÇONS (auto-évaluation) ──
+▸ Ce qui a marché:  Honored stop eventually
+▸ Ce qui a échoué:  Everything
+▸ Leçon clé:        Never trade midday without plan
+▸ Changement:       Hard stop: no trades after 11:00 if down 1%
+
+── SCORE AUTO-CALCULÉ ──
+▸ Score:  0/100  |  Grade: F
+
+═══════════════════════════════════════════════════
+ QUESTIONS POUR LE COACH IA
+═══════════════════════════════════════════════════
+
+Réponds à ces 6 questions de manière structurée :
+
+1. **VERDICT SETUP** : Ce setup avait-il un edge réel dans ces conditions
+   (SPY Down, volume Low, phase Midday) ?
+   Aurais-tu dû prendre ce trade ? Pourquoi ?
+
+2. **ANALYSE R:R** : Le R:R planifié (3.0R) était-il acceptable ?
+   Compte tenu du stop à $246.0 et du target à $254.0,
+   est-ce que la size de 200 shares était cohérente avec un risque max de 1% du compte ?
+
+3. **DIAGNOSTIC EXÉCUTION** : Entrée Chased, sortie Stop_hit.
+   Identifie la principale erreur d'exécution et son coût estimé en dollars.
+
+4. **PATTERN PSYCHOLOGIQUE** : L'état Revenge avant le trade
+   + FOMO détecté + entrée fluide.
+   Quel pattern comportemental cela révèle-t-il ? Est-ce récurrent ?
+
+5. **NOTE RÉVISÉE** : Sur la base de ton analyse, quel score (0–100) donnerais-tu à ce trade,
+   indépendamment du P&L ? Décompose : thèse (x/20), exécution (x/30), discipline (x/30), edge (x/20).
+
+6. **ACTION CONCRÈTE** : Donne UNE règle précise à ajouter dans ton playbook
+   suite à ce trade, formulée comme : "Si [condition], alors [action]".
