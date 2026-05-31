@@ -41,3 +41,15 @@ next-env.d.ts
 __pycache__/
 *.pyc
 *.pyo
+
+# System
+.DS_Store
+
+# Claude Code internal
+.agents/
+.claude/
+.codex/
+.code-review-graph/
+
+# Scanner cache
+scanner/__pycache__/
