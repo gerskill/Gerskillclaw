@@ -1,0 +1,12 @@
+{
+  "updated_at": "2026-05-31T00:00:00Z",
+  "account_balance": 25000,
+  "net_pnl": 0,
+  "win_rate": 0,
+  "profit_factor": 0,
+  "total_trades": 0,
+  "winning_trades": 0,
+  "losing_trades": 0,
+  "max_drawdown": 0,
+  "trades": []
+}
